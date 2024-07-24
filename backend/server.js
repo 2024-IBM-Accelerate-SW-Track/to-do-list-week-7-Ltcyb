@@ -7,8 +7,38 @@ const fsPromises = require("fs").promises;
 //const fs = require("fs");
 const todoDBName = "tododb";
 const useCloudant = true;
+const basicAuth = require("express-basic-auth");
 
+//authentications
+var { authenticator, upsertUser, cookieAuth } = require("./authentication");
+const auth = basicAuth({
+    authorizer: authenticator
+});
+const cookieParser = require("cookie-parser");
+app.use(cookieParser("82e4e438a0705fabf61f9854e3b575af"));
 
+app.get("/authenticate", auth, (req, res) => {
+  console.log(`user logging in: ${req.auth.user}`);
+  res.cookie('user', req.auth.user, { signed: true });
+  res.sendStatus(200);
+});
+
+app.post("/users", (req, res) => {
+  const b64auth = (req.headers.authorization || '').split(' ')[1] || ''
+  const [username, password] = Buffer.from(b64auth, 'base64').toString().split(':')
+  const upsertSucceeded = upsertUser(username, password)
+  res.sendStatus(upsertSucceeded ? 200 : 401);
+});
+
+app.get("/logout", (req, res) => {
+  res.clearCookie('user');
+  res.end();
+});
+
+app.use(cors({
+    credentials: true,
+    origin: 'http://localhost:3000'
+}));
 
 //Init code for Cloudant
 const {CloudantV1} = require('@ibm-cloud/cloudant');
@@ -45,7 +75,7 @@ async function addItem (request, response) {
           Current_date: curDate,
           Due_date: dueDate
         }
-        
+
         if (useCloudant) {
             //begin here for cloudant
             //const todoDocID = id;
@@ -53,12 +83,12 @@ async function addItem (request, response) {
             // Setting `_id` for the document is optional when "postDocument" function is used for CREATE.
             // When `_id` is not provided the server will generate one for your document.
             const todoDocument = { _id: id.stringify };
-          
+
             // Add "name" and "joined" fields to the document
             todoDocument['task'] = task;
             todoDocument.curDate = curDate;
             todoDocument.dueDate = dueDate;
-          
+
             // Save the document in the database with "postDocument" function
             const client = CloudantV1.newInstance({});
             console.log('Writing to: ', todoDBName)
@@ -73,7 +103,7 @@ async function addItem (request, response) {
             const json = JSON.parse(data);
             json.push(newTask);
             await fsPromises.writeFile("database.json", JSON.stringify(json))
-            console.log('Successfully wrote to file') 
+            console.log('Successfully wrote to file')
         }
         response.sendStatus(200)
     } catch (err) {
@@ -109,7 +139,7 @@ async function getItems (request, response) {
 };
 
 //** week 6, search items service */
-app.get("/get/searchitem", searchItems) 
+app.get("/get/searchitem", searchItems)
 async function searchItems (request, response) {
     //begin here
     var searchField = request.query.taskname;
@@ -128,7 +158,7 @@ async function searchItems (request, response) {
           });
         console.log(search_results);
         response.json(JSON.stringify(search_results));
-        
+
     }
     else {
     var json = JSON.parse (await fsPromises.readFile("database.json"));
@@ -143,7 +173,7 @@ async function initDB ()
 {
     //TODO --- Insert to create DB
     //See example at https://www.npmjs.com/package/@ibm-cloud/cloudant#authentication-with-environment-variables for how to create db
-    
+
     try {
         const client = CloudantV1.newInstance({});
         const putDatabaseResult = (
@@ -155,7 +185,7 @@ async function initDB ()
       console.log(`"${todoDBName}" database created.`);
     }
   } catch (err) {
-   
+
       console.log(
         `Cannot create "${todoDBName}" database, err: "${err.message}".`
       );
